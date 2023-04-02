@@ -1,0 +1,43 @@
+# deployというワークフロー名
+name: deploy
+
+# ワークフローの処理を開始するきっかけとなるイベント
+# mainとfeature/push_images_to_ecr(一時的な検証目的)でpushした時とプルリクがマージされた時に
+on:
+  push:
+    branches:
+      - main
+      - feature/push_images_to_ecr
+
+# 環境変数
+env:
+  AWS_REGION: ap-northeast-1
+
+# ジョブ
+jobs:
+  # ジョブID
+  deploy:
+    # ジョブ名 → GitHub の Actions 実行結果画面で表示
+    name: Deploy app to AWS Fargate
+    # ワークフローが実行される環境のOSやバージョン
+    runs-on: ubuntu-latest
+
+    # ステップ
+    steps:
+      # ステップ名
+      - name: Configure aws credentials for prod
+        # 条件に合致した時のみ、ステップが実行される
+        # ifにおいては${{}}を省略可能。 「if: ${{ github.ref == 'refs/heads/main' }}」でも可能。
+        # if: github.ref == 'refs/heads/main'
+        # 使用するアクション名
+        # アクションとは、GitHubAction用に用意された処理のまとまり
+        # AWS 公式のアクションである、aws-actions/configure-aws-credentials を使用
+        # 認証情報に基づき、AWSCLIを使ってAWS操作をできるようにする。
+        uses: aws-actions/configure-aws-credentials@v1
+        # アクションに必要な匹数がある場合はwithに続いて、引数名とその値を指定する
+        with:
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.PROD_AWS_ASSUME_ROLE_ARN }}
+          role-duration-seconds: 1800

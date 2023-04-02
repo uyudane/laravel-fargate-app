@@ -39,5 +39,9 @@ jobs:
           aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          # Assume Role する対象の IAM ロールの ARN を指定
           role-to-assume: ${{ secrets.PROD_AWS_ASSUME_ROLE_ARN }}
+          # Assume Role によって得られる一時的な権限の有効期間を 指定します。
+          # 30 分あれば最終的に Fargate へのデプロイも完了できそうなので、本書では 1800 秒 (30 分) を指定することにします。
+          # デフォルト値は 6 時間
           role-duration-seconds: 1800

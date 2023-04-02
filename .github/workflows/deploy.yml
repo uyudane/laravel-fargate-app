@@ -12,6 +12,10 @@ on:
 # 環境変数
 env:
   AWS_REGION: ap-northeast-1
+  # コミットSHA(コミットを一意に特定するID)をタグとして使用
+  IMAGE_TAG: ${{ github.sha }}
+  SYSTEM_NAME: example
+  SERVICE_NAME: foobar
 
 # ジョブ
 jobs:
@@ -45,3 +49,94 @@ jobs:
           # 30 分あれば最終的に Fargate へのデプロイも完了できそうなので、本書では 1800 秒 (30 分) を指定することにします。
           # デフォルト値は 6 時間
           role-duration-seconds: 1800
+
+      # 複数環境を使用する場合は、プッシュ先のブランチで環境名を切り替える。
+      - name: Set env vars for prod
+        # if: github.ref == 'refs/heads/main'
+        # $GITHUB_ENV に環境変数名と値のペアを書き込むことで、GitHub Actions で使用される環境変数を追加
+        run: echo "ENV_NAME=prod" >> $GITHUB_ENV
+
+      # GitHub 公式のアクションのひとつである actions/checkout を使用
+      # コードのチェックアウト
+      - uses: actions/checkout@v2
+
+      # 後続のステップでコンテナを通じて各種パッケージのインストールやビルドを行うため
+      # app コンテナと web コンテナを起動
+      - run: docker-compose up -d --build app web
+
+      # PHP 関連のパッケージをキャッシュし、次回のジョブ起動時に内容をチェック して、
+      # インストールすべき対象に変更が無ければ、キャッシュを利用するようにする
+      - name: Cache composer
+        # outputs を参照する際には、「steps.{そのステップの id}.outputs.{output の名前}」といったように、ステップの id が必要
+        id: cache-composer
+        # actions/cache は記述したステップだけでなく、ジョブ全体の終了時にも自動で後処理を 行います。
+        uses: actions/cache@v2
+        with:
+          path: backend/vendor
+          # 前回ジョブ起動時から composer.lock に 変化が無ければ、key が一致することとなり、キャッシュを利用する
+          # composer.lock に変化は無いけれども何らかの事情でキャッシュを使用しないでジョブを実行したい場合 に、
+          # 「v1」の部分を「v2」などに書き換えて強制的に key 不一致の状態を作り出せるよう、 このような keyにしている
+          key: composer-v1-${{ hashFiles('backend/composer.lock') }}
+
+      # PHPP関連パッケージのインストール
+      # -T:docker-compose exec を使って何かコマンドを実行する時には-T オプションを付ける。tty(標準入出力となっている端末デバイス) を無効にするため。
+      # -n:composer install 途中での質問表示を行わないため。
+      # --no-dev:comporser.jsonに記述されているパッケージのうち、開発環境向けを外す。(不要なため)
+      - run: docker-compose exec -T app composer install -n --prefer-dist --no-dev
+        # cache-hit には、キャッシュヒットしたかどうかが論理値で入っていて、キャッシュヒットしていなかったらインストールを行う
+        if: ${{ !steps.cache-composer.outputs.cache-hit }}
+
+      # Node.js 関連パッケージのインストール
+      - name: Cache npm
+        id: cache-npm-ci
+        uses: actions/cache@v2
+        with:
+          path: backend/node_modules
+          key: npm-v1-${{ hashFiles('backend/package-lock.json') }}
+
+      # npm ci は、npm install とほぼ同じ処理ですが、package-lock.json を更新しません
+      # CI ツールで Node.js 関連のパッケージをインストールする際は、 npm ci がよく使われます
+      - run: docker-compose exec -T web npm ci
+        if: ${{ !steps.cache-npm-ci.outputs.cache-hit }}
+
+      # JSのトランスパイル。npm run prodはnpm run devの本番向けコマンドで、生成されるJSのファイルサイズが小さくなる
+      # https://tech.amefure.com/php-laravel-npm-build
+      - run: docker-compose exec -T web npm run prod
+
+      # ECRへのログイン
+      - uses: aws-actions/amazon-ecr-login@v1
+        id: amazon-ecr-login
+
+      - name: Push nginx image to ecr
+        env:
+          # BuildKitというものを使用してイメージのビルドを行うために、1を設定する
+          DOCKER_BUILDKIT: 1
+          # 環境変数 ECR_REGISTRYに、「AWS のアカウントID.dkr.ecr.ap- northeast-1.amazonaws.com」を入れる
+          # つまり、レジストリまではユーザIDわかればわかる。
+          ECR_REGISTRY: ${{ steps.amazon-ecr-login.outputs.registry }}
+          # プッシュ先の ECR の名前 (リポジトリ名) を入れる
+          ECR_REPOSITORY: ${{ env.SYSTEM_NAME }}-${{ env.ENV_NAME }}-${{ env.SERVICE_NAME }}-nginx
+        # ビルド時間の短縮のための--cache
+        run: |
+          docker build \
+            --cache-from=$ECR_REGISTRY/$ECR_REPOSITORY:latest --build-arg BUILDKIT_INLINE_CACHE=1 . \
+            -f infra/docker/nginx/Dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # PHPイメージのビルド&プッシュ
+      - name: Push php image to ecr
+        env:
+          DOCKER_BUILDKIT: 1
+          ECR_REGISTRY: ${{ steps.amazon-ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.SYSTEM_NAME }}-${{ env.ENV_NAME }}-${{ env.SERVICE_NAME }}-php
+        run: |
+          docker build \
+            --cache-from=$ECR_REGISTRY/$ECR_REPOSITORY:latest --build-arg BUILDKIT_INLINE_CACHE=1 . \
+            -f infra/docker/php/Dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG

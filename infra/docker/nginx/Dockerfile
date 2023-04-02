@@ -19,4 +19,9 @@ COPY --from=node /opt /opt
 # nginx config file
 COPY ./infra/docker/nginx/*.conf /etc/nginx/conf.d/
 
+# アプリケーションコードをコピー
+# nginx のイメージに必要なのは backend ディレクトリ全体ではなく、
+# backend/public ディレクトリなので、それのみコピー
+COPY ./backend/public /work/backend/public
+
 WORKDIR /work/backend

@@ -29,6 +29,7 @@ COPY ./infra/docker/php/php-fpm.d/zzz-www.conf /usr/local/etc/php-fpm.d/zzz-www.
 COPY ./infra/docker/php/php.ini /usr/local/etc/php/php.ini
 
 # イメージのビルド時にアプリケーションのコードがコピーされるようにした
-COPY --chown=www-data:www-data ./backend /work/backend
+# COPY --chown=www-data:www-data ./backend /work/backend
+COPY ./backend /work/backend
 
 WORKDIR /work/backend

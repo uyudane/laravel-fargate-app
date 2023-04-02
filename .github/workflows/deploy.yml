@@ -99,7 +99,7 @@ jobs:
       - run: docker-compose exec -T web npm ci
         if: ${{ !steps.cache-npm-ci.outputs.cache-hit }}
 
-      # JSのトランスパイル。npm run prodはnpm run devの本番向けコマンドで、生成されるJSのファイルサイズが小さくなる
+      # JSのトランスパイル。npm run prodはnpm run devの本番向けコマンドで、生成されるJSのファイルサイズが小さくなる。
       # https://tech.amefure.com/php-laravel-npm-build
       - run: docker-compose exec -T web npm run prod
 

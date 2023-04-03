@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - feature/push_images_to_ecr
 
 # 環境変数
 env:
@@ -32,7 +31,7 @@ jobs:
       - name: Configure aws credentials for prod
         # 条件に合致した時のみ、ステップが実行される
         # ifにおいては${{}}を省略可能。 「if: ${{ github.ref == 'refs/heads/main' }}」でも可能。
-        # if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         # 使用するアクション名
         # アクションとは、GitHubAction用に用意された処理のまとまり
         # AWS 公式のアクションである、aws-actions/configure-aws-credentials を使用
@@ -52,7 +51,7 @@ jobs:
 
       # 複数環境を使用する場合は、プッシュ先のブランチで環境名を切り替える。
       - name: Set env vars for prod
-        # if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         # $GITHUB_ENV に環境変数名と値のペアを書き込むことで、GitHub Actions で使用される環境変数を追加
         run: echo "ENV_NAME=prod" >> $GITHUB_ENV
 
@@ -140,3 +139,14 @@ jobs:
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # ecspressoのダウンロード
+      - name: Download ecspresso
+        uses: kayac/ecspresso@v0
+        with:
+          version: v1.5.3
+
+      # ecspressoの実行
+      - name: Deploy to ecs
+        run: ecspresso deploy --config config_$ENV_NAME.yaml
+        working-directory: ./ecspresso

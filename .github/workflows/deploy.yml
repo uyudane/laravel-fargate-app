@@ -53,7 +53,9 @@ jobs:
       - name: Set env vars for prod
         if: github.ref == 'refs/heads/main'
         # $GITHUB_ENV に環境変数名と値のペアを書き込むことで、GitHub Actions で使用される環境変数を追加
-        run: echo "ENV_NAME=prod" >> $GITHUB_ENV
+        run: |
+          echo "ENV_NAME=prod" >> $GITHUB_ENV
+          echo "VPC_CIDR=172.32.0.0/16" >> $GITHUB_ENV
 
       # GitHub 公式のアクションのひとつである actions/checkout を使用
       # コードのチェックアウト
@@ -140,11 +142,30 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
+      # デプロイ時に「.env. 環境名」のファイルを S3 にアップロードする
+      - name: Upload env file
+        run: aws s3 cp .env.$ENV_NAME s3://shonansurvivors-$SYSTEM_NAME-$ENV_NAME-$SERVICE_NAME-env-file/$IMAGE_TAG/.env
+        working-directory: backend
+
       # ecspressoのダウンロード
       - name: Download ecspresso
         uses: kayac/ecspresso@v0
         with:
           version: v1.5.3
+
+      # タスク定義の登録
+      - name: Register task definition
+        run: ecspresso register --config config_$ENV_NAME.yaml
+        working-directory: ./ecspresso
+
+      # マイグレーションの実行
+      - name: Migrate database
+        run: |
+          ecspresso run --config config_$ENV_NAME.yaml \
+            --latest-task-definition \
+            --watch-container=php \
+            --overrides='{"containerOverrides":[{"name":"nginx", "command":["nginx", "-v"]},{"name":"php", "command":["php", "artisan", "migrate", "--force"]}]}'
+        working-directory: ./ecspresso
 
       # ecspressoの実行
       - name: Deploy to ecs

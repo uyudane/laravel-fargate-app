@@ -16,8 +16,10 @@ COPY --from=node /usr/local/bin /usr/local/bin
 COPY --from=node /usr/local/lib /usr/local/lib
 # yarn command
 COPY --from=node /opt /opt
-# nginx config file
-COPY ./infra/docker/nginx/*.conf /etc/nginx/conf.d/
+# nginx config file will be output to /etc/nginx/conf.d/ by envsubst
+# コンテナ起動時に環境変数 VPC_CIDR が渡されていれば、default.conf の「$VPC_CIDR」の部分には、環境変数の値が展開され る
+COPY ./infra/docker/nginx/default.conf /etc/nginx/templates/default.conf.template
+COPY ./infra/docker/nginx/nginx.conf /etc/nginx/nginx.conf
 
 # アプリケーションコードをコピー
 # nginx のイメージに必要なのは backend ディレクトリ全体ではなく、

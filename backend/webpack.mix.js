@@ -17,4 +17,5 @@ mix.js("resources/js/app.js", "public/js")
         require("tailwindcss"),
         require("autoprefixer"),
     ])
+    // デプロイされた JavaScript や CSS について、クライアントで古いキャッシュが使われないようにする
     .version();
